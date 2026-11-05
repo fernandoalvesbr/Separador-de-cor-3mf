@@ -7,6 +7,8 @@ import { paintTargets, VIRTUAL_EXTRUDER_PALETTE } from './vendor/three-mf/index.
 const $ = (id) => document.getElementById(id);
 let project = null,
   selectedId = null,
+  selectedIds = new Set(),
+  lineCuts = [],
   busy = false,
   requestId = 0,
   worker,
@@ -48,7 +50,9 @@ function syncVirtualExtruderUI() {
     ? preferred
     : targets[0].id;
   $('virtual-settings').hidden = !enabled;
-  $('export-label').textContent = enabled ? 'Baixar mesa com extrusores virtuais' : 'Baixar mesa completa em 3MF';
+  $('export-label').textContent = enabled
+    ? 'Baixar mesa com extrusores virtuais'
+    : 'Baixar mesa completa em 3MF';
   $('export-note').textContent = enabled
     ? 'Select the matching printer, then use File → Open Project in PrusaSlicer 2.9.6+.'
     : 'Meshes and paint only. Uses your slicer’s current printer.';
@@ -81,7 +85,10 @@ document.addEventListener('click', (e) => {
   if (!$('physical-slot-help').contains(e.target)) showPhysicalSlotHelp(false);
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') showPhysicalSlotHelp(false);
+  if (e.key === 'Escape') {
+    showPhysicalSlotHelp(false);
+    invalidateLine();
+  }
 });
 syncVirtualExtruderUI();
 function startWorker() {
@@ -118,18 +125,33 @@ function toast(message, error = false) {
 $('dismiss-toast').onclick = () => ($('toast').hidden = true);
 let viewer;
 try {
-  viewer = new Viewer($('canvas-host'), (normal, offset) => {
-    planeNormal = normal;
-    planeOffset = offset;
-    const center = bounds([selectedPiece()]).center;
-    $('offset').value = (offset - dot(normal, center)).toFixed(2);
-    $('tilt').value = ((Math.acos(Math.max(-1, Math.min(1, normal[2]))) * 180) / Math.PI).toFixed(
-      1,
-    );
-    $('azimuth').value = ((Math.atan2(normal[1], normal[0]) * 180) / Math.PI).toFixed(1);
-    syncRange();
-    syncAxes();
-  });
+  viewer = new Viewer(
+    $('canvas-host'),
+    (normal, offset) => {
+      planeNormal = normal;
+      planeOffset = offset;
+      const center = bounds([selectedPiece()]).center;
+      $('offset').value = (offset - dot(normal, center)).toFixed(2);
+      $('tilt').value = ((Math.acos(Math.max(-1, Math.min(1, normal[2]))) * 180) / Math.PI).toFixed(
+        1,
+      );
+      $('azimuth').value = ((Math.atan2(normal[1], normal[0]) * 180) / Math.PI).toFixed(1);
+      syncRange();
+      syncAxes();
+    },
+    (id, additive) => {
+      if (!busy && project) selectPiece(id, additive);
+    },
+    () => {
+      syncPieceOffset();
+      invalidateLine();
+      updatePlane();
+    },
+  );
+  viewer.onCutLine = (normal, offset) => {
+    lineCuts.push({ normal, offset, pieceId: selectedId });
+    syncCutQueue();
+  };
 } catch {
   toast(
     'This browser could not start the 3D viewer. Enable WebGL / hardware acceleration and reload.',
@@ -139,17 +161,41 @@ try {
 const selectedPiece = () => project?.pieces.find((p) => p.id === selectedId);
 function setBusy(value, message = 'Working…') {
   busy = value;
+  viewer?.setInteractionEnabled(!value);
   $('busy-overlay').hidden = !value;
   $('busy-message').textContent = message;
   document
     .querySelectorAll('.inspector button,.inspector input,.inspector select')
-    .forEach((el) => (el.disabled = value || !project));
+    .forEach((el) => (el.disabled = value || !project?.pieces.length));
   $('undo').disabled = value || !project?.undoCount;
+  $('remove-cut-line').disabled = value || !lineCuts.length;
+  $('clear-cut-lines').disabled = value || !lineCuts.length;
   $('open-button').disabled = value;
   $('empty-open').disabled = value;
   $('demo-button').disabled = value;
   syncPhysicalControls();
+  syncGlueJointControl();
 }
+function syncGlueJointControl() {
+  const colors = $('cut-method').value === 'colors';
+  if (colors) $('glue-joints').checked = false;
+  $('glue-joints').disabled = busy || colors || !project?.pieces.length;
+  $('glue-joints').classList.toggle('unavailable-for-colors', colors);
+  $('glue-joints').onclick = (event) => {
+    if ($('cut-method').value === 'colors') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      event.currentTarget.checked = false;
+      return false;
+    }
+  };
+  $('glue-joints').title = colors
+    ? 'Junções não estão disponíveis na separação por cores'
+    : 'Criar pinos e furos para facilitar a colagem';
+}
+$('glue-joints').onchange = () => {
+  if ($('cut-method').value === 'colors') $('glue-joints').checked = false;
+};
 async function run(message, fn) {
   if (busy) return;
   setBusy(true, message);
@@ -185,7 +231,7 @@ function syncRange() {
   $('offset-slider').value = $('offset').value;
 }
 function updatePlane(reset = false) {
-  if (!project) return;
+  if (!selectedPiece()) return;
   const tilt = (Number($('tilt').value) * Math.PI) / 180,
     az = (Number($('azimuth').value) * Math.PI) / 180;
   planeNormal = [Math.sin(tilt) * Math.cos(az), Math.sin(tilt) * Math.sin(az), Math.cos(tilt)];
@@ -194,36 +240,53 @@ function updatePlane(reset = false) {
   planeOffset = dot(planeNormal, center) + Number($('offset').value);
   syncRange();
   syncAxes();
-  viewer?.setPlane(
-    planeNormal,
-    planeOffset,
-    center,
-    $('show-plane').checked && Number($('explode').value) === 0,
-  );
+  viewer?.setPlane(planeNormal, planeOffset, center, $('cut-method').value === 'plane');
 }
-function selectPiece(id) {
-  selectedId = id;
-  $('piece-select').value = id;
-  viewer?.select(id);
-  $('explode').value = viewer?.pieceOffsets.get(id) || 0;
-  $('explode-value').value = `${$('explode').value} mm`;
-  $('separation-direction').value = viewer?.pieceDirections.get(id) || 'horizontal';
+function syncPieceOffset() {
+  const offset = viewer?.pieceOffsets.get(selectedId) || 0;
+  $('explode').min = Math.min(-100, offset);
+  $('explode').max = Math.max(100, offset);
+  $('explode').value = offset;
+  $('explode-value').value = `${Number(offset.toFixed(2))} mm`;
+}
+function invalidateLine() {
+  lineCuts = [];
+  syncCutQueue();
+  viewer?.clearCutLine();
+  $('line-status').textContent =
+    'Escolha uma vista, desenhe quantas linhas precisar e clique em Aplicar corte.';
+  $('draw-cut-line').textContent = 'Adicionar linhas de corte';
+}
+function selectPiece(id, additive = false) {
+  if (!project?.pieces.some((p) => p.id === id)) return;
+  if (additive) {
+    if (selectedIds.has(id) && selectedIds.size > 1) selectedIds.delete(id);
+    else selectedIds.add(id);
+  } else selectedIds = new Set([id]);
+  selectedId = selectedIds.has(id) ? id : [...selectedIds].at(-1);
+  $('piece-select').value = selectedId;
+  viewer?.select(selectedId, selectedIds);
+  syncPieceOffset();
+  $('separation-direction').value = viewer?.pieceDirections.get(selectedId) || 'horizontal';
+  invalidateLine();
   updatePlane(true);
   renderPieces();
 }
 function renderPieces() {
   $('piece-count').textContent = project.pieces.length;
   const selectedOnly = $('export-scope').value === 'selected';
-  $('export-count').textContent = selectedOnly ? 1 : project.pieces.length;
-  $('export-label').textContent = selectedOnly ? 'Baixar cor selecionada em 3MF' : 'Baixar mesa completa em 3MF';
+  $('export-count').textContent = selectedOnly ? selectedIds.size : project.pieces.length;
+  $('export-label').textContent = selectedOnly
+    ? 'Baixar peças selecionadas em 3MF'
+    : 'Baixar mesa completa em 3MF';
   $('export-note').textContent = selectedOnly
     ? 'Exporta somente a peça selecionada, com sua cor e posição na mesa.'
     : 'Exporta todas as peças, com suas cores e posições na mesa.';
   $('piece-list').replaceChildren();
   for (const piece of project.pieces) {
     const button = document.createElement('button');
-    button.className = 'piece-row' + (piece.id === selectedId ? ' selected' : '');
-    button.setAttribute('aria-pressed', piece.id === selectedId);
+    button.className = 'piece-row' + (selectedIds.has(piece.id) ? ' selected' : '');
+    button.setAttribute('aria-pressed', selectedIds.has(piece.id));
     button.disabled = busy;
     const marker = document.createElement('span');
     marker.className = 'piece-marker';
@@ -248,7 +311,8 @@ function renderPieces() {
       ? 'Closed, consistently oriented mesh'
       : `${piece.health.boundary} open edges; ${piece.health.nonmanifold} non-manifold edges; ${piece.health.inconsistent} inconsistent edges`;
     button.append(marker, content, health);
-    button.onclick = () => selectPiece(piece.id);
+    button.onclick = (event) =>
+      selectPiece(piece.id, event.ctrlKey || event.metaKey || event.shiftKey);
     $('piece-list').append(button);
   }
 }
@@ -260,15 +324,18 @@ function renderProject(next, fit = true) {
   const oldPalette = project?.palette;
   project = next;
   if (!fit && oldPalette) project.palette = oldPalette;
-  selectedId = next.selectedId || next.pieces[0].id;
+  selectedId = next.selectedId || next.pieces[0]?.id || null;
+  selectedIds = new Set(next.selectedIds || (selectedId === null ? [] : [selectedId]));
+  invalidateLine();
   $('empty-state').hidden = true;
   $('view-toolbar').hidden = false;
   $('demo-tag').hidden = !project.demo;
   $('model-title').textContent = project.filename;
+  $('model-title').dataset.noTranslate = '';
   const count = project.pieces.reduce((sum, p) => sum + p.faces.length, 0);
   $('model-detail').textContent =
     `${count.toLocaleString()} triangles · ${project.palette.length} materials · millimeters`;
-  $('view-hint').textContent = 'Drag to orbit · Right-drag to pan · Scroll to zoom';
+
   $('piece-select').replaceChildren();
   for (const p of project.pieces) {
     const option = document.createElement('option');
@@ -300,9 +367,10 @@ function renderProject(next, fit = true) {
   }
   $('material-count').textContent = `${project.palette.length} slots`;
   viewer?.load(project.pieces, project.palette, selectedId, fit);
-  const savedOffset = viewer?.pieceOffsets.get(selectedId) || 0;
-  $('explode').value = savedOffset;
-  $('explode-value').value = `${savedOffset} mm`;
+  syncTableLock();
+  syncGlueJointControl();
+  viewer?.select(selectedId, selectedIds);
+  syncPieceOffset();
   $('separation-direction').value = viewer?.pieceDirections.get(selectedId) || 'horizontal';
   renderPieces();
   updatePlane(true);
@@ -315,13 +383,12 @@ function openFile(file) {
   }
   run('Reading 3MF and resolving paint…', async () => {
     const buffer = await file.arrayBuffer();
-    const imported = await request('import', { buffer, filename: file.name }, [buffer]);
-    const next = await request('splitColors');
+    const next = await request('import', { buffer, filename: file.name }, [buffer]);
     renderProject(next);
     toast(
       next.warnings.length
-        ? `Cores separadas automaticamente. ${next.warnings.join(' ')}`
-        : `${next.pieces.length} cor(es) detectada(s) e separada(s) automaticamente.`,
+        ? next.warnings.join(' ')
+        : 'Modelo aberto inteiro. Escolha o tipo de corte e clique em Aplicar corte.',
       next.warnings.length > 0 || next.pieces.some((piece) => !piece.health.closed),
     );
   });
@@ -333,10 +400,9 @@ $('file-input').onchange = (e) => {
 };
 $('demo-button').onclick = () =>
   run('Loading painted demo…', async () => {
-    await request('demo');
-    const next = await request('splitColors');
+    const next = await request('demo');
     renderProject(next);
-    toast(`${next.pieces.length} cor(es) do exemplo separada(s) automaticamente.`);
+    toast('Exemplo aberto inteiro. Use Aplicar corte para separar.');
   });
 $('piece-select').onchange = (e) => selectPiece(Number(e.target.value));
 document.querySelectorAll('[data-axis]').forEach(
@@ -350,8 +416,7 @@ document.querySelectorAll('[data-axis]').forEach(
     }),
 );
 function assemble() {
-  $('explode').value = 0;
-  setExplode();
+  invalidateLine();
 }
 for (const id of ['offset', 'tilt', 'azimuth'])
   $(id).oninput = () => {
@@ -385,29 +450,139 @@ function setExplode() {
   const value = Number($('explode').value);
   $('explode-value').value = `${value} mm`;
   viewer?.setExplode(value, $('separation-direction').value);
-  if (project)
+  if (selectedPiece())
     viewer?.setPlane(
       planeNormal,
       planeOffset,
       bounds([selectedPiece()]).center,
-      $('show-plane').checked && value === 0,
+      $('cut-method').value === 'plane',
     );
 }
+$('move-to-bed').onclick = () => {
+  if (busy || !selectedPiece() || !viewer?.moveToBed()) return;
+  const offset = viewer.pieceOffsets.get(selectedId) || 0;
+  $('explode').min = Math.min(-100, offset);
+  $('explode').max = Math.max(100, offset);
+  $('explode').value = offset;
+  $('explode-value').value = `${offset} mm`;
+  invalidateLine();
+  updatePlane();
+  toast('Peça selecionada movida para a mesa.');
+};
 $('explode').oninput = setExplode;
-$('separation-direction').onchange = setExplode;
-$('cut-button').onclick = () =>
-  run('Cutting painted surfaces and closing both halves…', async () => {
+$('separation-direction').onchange = () => {
+  if (!viewer || !selectedPiece()) return;
+  const axis = $('separation-direction').value;
+  viewer.pieceDirections.set(selectedId, axis);
+  viewer.pieceOffsets.set(
+    selectedId,
+    viewer.pieceTranslations.get(selectedId)?.[
+      axis === 'z' ? 'z' : axis === 'vertical' ? 'y' : 'x'
+    ] || 0,
+  );
+  syncPieceOffset();
+};
+$('cut-method').onchange = () => {
+  invalidateLine();
+  syncGlueJointControl();
+  $('line-controls').hidden = $('cut-method').value !== 'line';
+  $('plane-controls').hidden = $('cut-method').value !== 'plane';
+  updatePlane(true);
+};
+function syncCutQueue() {
+  $('line-status').textContent = lineCuts.length
+    ? `${lineCuts.length} linha(s) preparada(s). Continue desenhando ou clique em Aplicar corte.`
+    : 'Desenhe quantas linhas precisar e clique em Aplicar corte.';
+  $('draw-cut-line').textContent = viewer?.drawingLine
+    ? 'Parar desenho'
+    : 'Adicionar linhas de corte';
+  $('remove-cut-line').disabled = busy || !lineCuts.length;
+  $('clear-cut-lines').disabled = busy || !lineCuts.length;
+  viewer?.setQueuedCutPlanes(lineCuts);
+}
+$('draw-cut-line').onclick = () => {
+  if (busy || !selectedPiece()) return;
+  if (viewer?.drawingLine) viewer.stopDrawingLine();
+  else viewer?.beginCutLine();
+  syncCutQueue();
+};
+$('remove-cut-line').onclick = () => {
+  lineCuts.pop();
+  syncCutQueue();
+};
+$('clear-cut-lines').onclick = () => {
+  invalidateLine();
+};
+$('select-all-pieces').onclick = () => {
+  selectedIds = new Set(project.pieces.map((p) => p.id));
+  viewer?.select(selectedId, selectedIds);
+  renderPieces();
+};
+$('delete-pieces').onclick = () =>
+  run('Excluindo peças selecionadas…', async () => {
+    renderProject(await request('delete', { ids: [...selectedIds] }), false);
+    toast('Peças excluídas. Use Desfazer para restaurar.');
+  });
+function rotatePieces(angle) {
+  if (!Number.isFinite(angle)) {
+    toast('Informe um ângulo válido.', true);
+    return;
+  }
+  run('Girando peças…', async () => {
+    renderProject(
+      await request('rotate', {
+        ids: [...selectedIds],
+        axis: $('piece-rotation-axis').value,
+        angle,
+      }),
+      false,
+    );
+    toast(`Peças giradas ${angle}°. Use Mover para mesa para apoiar a peça.`);
+  });
+}
+$('rotate-piece').onclick = () => rotatePieces($('piece-rotation-angle').valueAsNumber);
+document.querySelectorAll('[data-piece-angle]').forEach((button) => {
+  button.onclick = () => rotatePieces(Number(button.dataset.pieceAngle));
+});
+$('cut-button').onclick = () => {
+  const method = $('cut-method').value;
+  if (method !== 'colors' && selectedIds.size !== 1) {
+    toast('Selecione apenas uma peça para cortar por linha ou plano.', true);
+    return;
+  }
+  if (
+    method === 'line' &&
+    (!lineCuts.length || lineCuts.some((cut) => cut.pieceId !== selectedId))
+  ) {
+    toast('Desenhe a linha de corte primeiro.', true);
+    return;
+  }
+  run('Aplicando corte…', async () => {
     const capMaterial = Number($('cap-material').value);
-    const next = await request('cut', {
+    const next = await request(method === 'colors' ? 'splitColors' : 'cut', {
+      ids: [...selectedIds],
       pieceId: selectedId,
       normal: planeNormal,
       offset: planeOffset,
+      cuts:
+        method === 'line' ? lineCuts.map(({ normal, offset }) => ({ normal, offset })) : undefined,
       capMaterial,
+      joints: $('glue-joints').checked,
     });
     renderProject(next, false);
     $('cap-material').value = capMaterial;
-    toast('Cut complete. Both pieces are closed. Select either piece to cut again.');
+    toast(
+      next.openColorParts
+        ? 'Cores separadas como superfícies abertas: será necessário repará-las no fatiador antes de imprimir ou cortar novamente.'
+        : next.jointsCreated
+          ? `Corte aplicado com ${next.jointsCreated} junção(ões) para colagem.`
+          : next.cutsApplied
+            ? `${next.cutsApplied} corte(s) aplicado(s). ${next.cutsSkipped ? `${next.cutsSkipped} linha(s) sem interseção foram ignoradas. ` : ''}Selecione uma parte para continuar cortando.`
+            : 'Corte aplicado. Use Desfazer para restaurar a peça.',
+      !!next.openColorParts,
+    );
   });
+};
 $('undo').onclick = () => {
   if (project?.undoCount)
     run('Restoring the previous cut…', async () => {
@@ -420,7 +595,10 @@ $('export-button').onclick = () =>
   run('Saving geometry and color assignments…', async () => {
     const virtual = $('virtual-extruders').checked;
     const physicalExtruderCount = Number($('physical-extruders').value);
-      const ids = $('export-scope').value === 'selected' ? [selectedId] : project.pieces.map((piece) => piece.id),
+    const ids =
+        $('export-scope').value === 'selected'
+          ? [...selectedIds]
+          : project.pieces.map((piece) => piece.id),
       exported = await request('export', {
         ids,
         positions: Object.fromEntries(
@@ -473,12 +651,14 @@ $('cancel').onclick = () => {
   $('empty-state').hidden = false;
   $('view-toolbar').hidden = true;
   $('model-title').textContent = 'Your next clean cut.';
+  delete $('model-title').dataset.noTranslate;
   $('model-detail').textContent = 'Painted surfaces. Separate pieces.';
   $('piece-list').replaceChildren();
   $('palette').replaceChildren();
   $('piece-count').textContent = '0';
   $('demo-tag').hidden = true;
   viewer?.transform.detach();
+  viewer?.pieceTransform.detach();
   if (viewer) {
     viewer.plane.visible = false;
     for (const m of viewer.meshes.values()) {
@@ -500,6 +680,22 @@ document.querySelectorAll('[data-view]').forEach(
         .forEach((b) => b.classList.toggle('active', b === el));
     }),
 );
+function syncTableLock() {
+  const locked = viewer?.navigationLocked !== false;
+  $('toggle-table-lock').setAttribute('aria-pressed', String(locked));
+  $('toggle-table-lock').textContent = locked ? '🔒 Desbloquear mesa' : '🔓 Bloquear mesa';
+  $('toggle-table-lock').title = locked
+    ? 'Mesa bloqueada: clique para liberar a navegação'
+    : 'Mesa desbloqueada: clique para travar a navegação';
+  $('view-hint').textContent = locked
+    ? 'Mesa bloqueada · Clique na peça e arraste as setas para mover'
+    : 'Mesa desbloqueada · Arraste o fundo para girar · Role para ampliar';
+}
+$('toggle-table-lock').onclick = () => {
+  if (busy || !viewer) return;
+  viewer.setNavigationLocked(!viewer.navigationLocked);
+  syncTableLock();
+};
 $('wireframe').onclick = () => {
   const value = $('wireframe').getAttribute('aria-pressed') !== 'true';
   $('wireframe').setAttribute('aria-pressed', value);
@@ -515,7 +711,22 @@ $('help-dialog').onclick = (e) => {
   }
 };
 document.addEventListener('keydown', (e) => {
-  if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || $('help-dialog').open) return;
+  if ($('help-dialog').open) return;
+  const deleteKey =
+    e.key === 'Delete' || e.key === 'Backspace' || e.code === 'Delete' || e.code === 'Backspace';
+  if (deleteKey && !busy && project && !/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) {
+    e.preventDefault();
+    e.stopPropagation();
+    const ids = selectedIds.size ? [...selectedIds] : selectedId == null ? [] : [selectedId];
+    if (ids.length) {
+      run('Excluindo peças selecionadas…', async () => {
+        renderProject(await request('delete', { ids }), false);
+        toast('Peças excluídas. Use Desfazer para restaurar.');
+      });
+    }
+    return;
+  }
+  if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
     e.preventDefault();
     if (!busy) $('undo').click();

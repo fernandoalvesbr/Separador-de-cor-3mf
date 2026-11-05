@@ -4,13 +4,18 @@ Aplicativo web em português brasileiro para abrir modelos 3MF pintados e separa
 
 ## Recursos desta versão
 
-- Detecção e separação automática das regiões de cor.
-- Movimento individual por eixo X (horizontal), Y (vertical na mesa) ou Z (altura), com valores positivos e negativos.
-- Cada peça mantém sua posição ao selecionar outra cor.
-- As partes geradas por um corte herdam a posição da peça original.
-- Exportação da mesa completa ou somente da peça selecionada em 3MF, com as posições e a pintura preservadas.
+- O modelo abre inteiro, com a pintura preservada. A separação só acontece ao clicar em **Aplicar corte**.
+- Selecione **Separar por cores**, **Linha desenhada no ambiente** ou **Plano: eixo e posição**.
+- Para cortar por linha, selecione uma peça, escolha uma vista, clique em **Desenhar linha de corte** e arraste sobre o modelo quantas vezes precisar. As linhas ficam acumuladas; use **Remover última linha**, **Limpar linhas** ou **Parar desenho** para editar a preparação. **Aplicar corte** executa todas em sequência sobre as partes resultantes, sem limite fixo de linhas (sujeito à complexidade e memória do modelo). Cada linha define um plano que atravessa a peça na direção da câmera; confirme com **Aplicar corte**.
+- Clique nas peças no ambiente ou na lista. Ctrl/⌘/Shift + clique seleciona várias; **Selecionar todas** também está disponível.
+- Rotação das selecionadas em X/Y/Z com botões de **90°**, **180°** ou ângulo numérico, em torno do centro de cada peça.
+- **Excluir selecionadas** remove uma ou mais peças. **Desfazer** restaura cortes, rotações e exclusões (últimas 12 edições), inclusive após excluir tudo.
+- Movimento individual em X/Y/Z e **Mover para mesa**, que apoia a base em Z = 0.
+- Exportação da mesa ou das selecionadas em 3MF, incluindo as rotações, posições e cores.
 
-Regiões pintadas podem representar superfícies abertas. A separação por material não cria automaticamente sólidos fechados; a interface identifica as malhas que precisam de verificação.
+**Criar junções para colagem** começa desmarcado. Quando ativado, os cortes criam pinos integrados e furos cegos correspondentes, com 0,2 mm de folga radial e de profundidade. O posicionamento é automático nas interfaces com espaço suficiente, com pino de pelo menos 1,2 mm de diâmetro e parede mínima de 0,8 mm. Cortes sem espaço seguro são recusados sem alterar a peça.
+
+Na separação por cores, sólidos com um ponto interno comum visível por todas as faces podem ser divididos em volumes fechados; as junções ficam nessas interfaces internas. Geometrias mais complexas devem ser divididas primeiro por linha/plano antes de aplicar junções por cor. Com junções desmarcadas, se não for possível fechar os volumes, a separação mantém as superfícies coloridas e avisa que precisam de reparo no fatiador. As junções são geometria real, incluída no 3MF exportado.
 
 ## Executar na porta 3333
 

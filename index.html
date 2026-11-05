@@ -18,6 +18,12 @@
         ><span class="version">LOCAL</span></a
       >
       <div class="header-right">
+        <label class="language-picker" for="language-select"><span>Idioma</span>
+          <select id="language-select" aria-label="Idioma">
+            <option value="pt-BR" selected>Português</option>
+            <option value="en">English</option>
+          </select>
+        </label>
         <span class="local-label">🔒 Os ficheiros ficam no seu dispositivo</span
         ><button id="help-button" class="quiet">Como funciona</button
         ><button id="open-button" class="secondary">Abrir ficheiro <span>↗</span></button>
@@ -37,19 +43,28 @@
         </div>
         <div id="empty-state" class="empty-state">
           <div class="drop-icon">↥</div>
-          <h2>Abra o 3MF.<br />As cores separam-se sozinhas.</h2>
+          <h2>Abra o 3MF.<br />Você escolhe onde cortar.</h2>
           <p>
-            Detectamos cada material automaticamente e criamos<br />uma peça por cor, pronta para exportar.
+            Abra o modelo inteiro, selecione as peças e aplique<br />cortes por cor ou por uma linha
+            no ambiente.
           </p>
           <button id="empty-open" class="primary">Abrir ficheiro 3MF</button
           ><button id="demo-button" class="text-button">Ver um exemplo <span>→</span></button
           ><small>PrusaSlicer · Bambu Studio · OrcaSlicer · processamento local</small>
         </div>
         <div id="view-toolbar" class="view-toolbar" hidden>
-          <button id="fit" title="Fit model (F)">Fit</button><span class="divider"></span
-          ><button data-view="iso" class="active">3D</button><button data-view="top">Top</button
-          ><button data-view="front">Front</button><button data-view="right">Right</button
-          ><span class="divider"></span><button id="wireframe" aria-pressed="false">Edges</button>
+          <button
+            id="toggle-table-lock"
+            aria-pressed="true"
+            title="Mesa bloqueada: clique para liberar a navegação"
+          >
+            🔒 Desbloquear mesa
+          </button>
+          <span class="divider"></span><button id="fit" title="Fit model (F)">Fit</button
+          ><span class="divider"></span><button data-view="iso" class="active">3D</button
+          ><button data-view="top">Top</button><button data-view="front">Front</button
+          ><button data-view="right">Right</button><span class="divider"></span
+          ><button id="wireframe" aria-pressed="false">Edges</button>
         </div>
         <div class="viewport-bottom">
           <span id="view-hint">Largue um ficheiro .3mf aqui para começar</span
@@ -65,100 +80,170 @@
       <aside class="inspector">
         <section class="panel cut-panel">
           <div class="section-title">
-            <h2><span class="step">01</span> Separação automática</h2>
+            <h2><span class="step">01</span> Cortar peças</h2>
             <label class="switch-label" hidden
               ><input id="show-plane" type="checkbox" checked disabled /> Show</label
             >
           </div>
           <div class="field">
-            <label for="piece-select">Piece to cut</label
+            <label for="piece-select">Peça ativa</label
             ><select id="piece-select" disabled>
               <option>Open a model first</option>
             </select>
           </div>
-          <div hidden>
           <div class="field">
-            <label>Plane direction</label>
-            <div class="segmented axis-buttons">
-              <button data-axis="X" disabled><span class="x-dot"></span>X</button
-              ><button data-axis="Y" disabled><span class="y-dot"></span>Y</button
-              ><button data-axis="Z" class="active" disabled><span class="z-dot"></span>Z</button>
-            </div>
-          </div>
-          <div class="field position-field">
-            <div class="label-row">
-              <label for="offset">Position from center</label
-              ><button id="center" class="text-button" disabled>Center</button>
-            </div>
-            <div class="number-unit">
-              <input id="offset" type="number" value="0" step="0.1" disabled /><span>mm</span>
-            </div>
-            <input
-              id="offset-slider"
-              aria-label="Cut position"
-              type="range"
-              min="-25"
-              max="25"
-              value="0"
-              step="0.1"
-              disabled
-            />
-          </div>
-          <div class="two-fields">
-            <div class="field">
-              <label for="tilt">Tilt</label>
-              <div class="number-unit">
-                <input id="tilt" type="number" min="0" max="180" step="1" value="0" disabled /><span
-                  >°</span
-                >
-              </div>
-            </div>
-            <div class="field">
-              <label for="azimuth">Azimuth</label>
-              <div class="number-unit">
-                <input
-                  id="azimuth"
-                  type="number"
-                  min="-180"
-                  max="180"
-                  step="1"
-                  value="0"
-                  disabled
-                /><span>°</span>
-              </div>
-            </div>
-          </div>
-          <div class="gizmo-row">
-            <span>Drag plane to</span>
-            <div class="segmented compact">
-              <button id="move-mode" class="active" disabled>Move</button
-              ><button id="rotate-mode" disabled>Rotate</button>
-            </div>
-          </div>
-          <div class="field">
-            <label for="cap-material">New cut face material</label
-            ><select id="cap-material" disabled>
-              <option>Material 1</option>
+            <label for="cut-method">Tipo de corte</label>
+            <select id="cut-method" disabled>
+              <option value="colors">Separar por cores</option>
+              <option value="line">Linha desenhada no ambiente</option>
+              <option value="plane">Plano: eixo e posição</option>
             </select>
           </div>
+          <div id="line-controls" hidden>
+            <button id="draw-cut-line" class="secondary full" disabled>
+              Adicionar linhas de corte
+            </button>
+            <div class="piece-actions">
+              <button id="remove-cut-line" class="quiet" disabled>Remover última linha</button>
+              <button id="clear-cut-lines" class="quiet" disabled>Limpar linhas</button>
+            </div>
+            <p id="line-status" class="panel-note">
+              Escolha uma vista (superior, frontal ou lateral), arraste uma linha sobre a peça e
+              clique em Aplicar corte.
+            </p>
           </div>
+          <div id="plane-controls" hidden>
+            <div class="field">
+              <label>Plane direction</label>
+              <div class="segmented axis-buttons">
+                <button data-axis="X" disabled><span class="x-dot"></span>X</button
+                ><button data-axis="Y" disabled><span class="y-dot"></span>Y</button
+                ><button data-axis="Z" class="active" disabled><span class="z-dot"></span>Z</button>
+              </div>
+            </div>
+            <div class="field position-field">
+              <div class="label-row">
+                <label for="offset">Position from center</label
+                ><button id="center" class="text-button" disabled>Center</button>
+              </div>
+              <div class="number-unit">
+                <input id="offset" type="number" value="0" step="0.1" disabled /><span>mm</span>
+              </div>
+              <input
+                id="offset-slider"
+                aria-label="Cut position"
+                type="range"
+                min="-25"
+                max="25"
+                value="0"
+                step="0.1"
+                disabled
+              />
+            </div>
+            <div class="two-fields">
+              <div class="field">
+                <label for="tilt">Tilt</label>
+                <div class="number-unit">
+                  <input
+                    id="tilt"
+                    type="number"
+                    min="0"
+                    max="180"
+                    step="1"
+                    value="0"
+                    disabled
+                  /><span>°</span>
+                </div>
+              </div>
+              <div class="field">
+                <label for="azimuth">Azimuth</label>
+                <div class="number-unit">
+                  <input
+                    id="azimuth"
+                    type="number"
+                    min="-180"
+                    max="180"
+                    step="1"
+                    value="0"
+                    disabled
+                  /><span>°</span>
+                </div>
+              </div>
+            </div>
+            <div class="gizmo-row">
+              <span>Drag plane to</span>
+              <div class="segmented compact">
+                <button id="move-mode" class="active" disabled>Move</button
+                ><button id="rotate-mode" disabled>Rotate</button>
+              </div>
+            </div>
+            <div class="field">
+              <label for="cap-material">New cut face material</label
+              ><select id="cap-material" disabled>
+                <option>Material 1</option>
+              </select>
+            </div>
+          </div>
+          <label class="join-option"
+            ><input id="glue-joints" type="checkbox" disabled /> Criar junções para colagem</label
+          >
+          <p class="panel-note">
+            Cria pinos e furos correspondentes, com folga de 0,2 mm. Disponível em cortes por linha,
+            plano quando houver volume suficiente. A separação por cores não usa junções.
+          </p>
           <button id="cut-button" class="primary full" disabled>
             <span>⌁</span> Apply cut <span class="keycap">C</span>
           </button>
-          <p class="panel-note">Both halves are kept. Surface paint stays assigned.</p>
+          <p class="panel-note">
+            O modelo só é separado ao aplicar o corte. A pintura original é preservada.
+          </p>
         </section>
         <section class="panel pieces-panel">
           <div class="section-title">
             <h2>
-              <span class="step">02</span> Cores detectadas <span id="piece-count" class="count">0</span>
+              <span class="step">02</span> Peças <span id="piece-count" class="count">0</span>
             </h2>
             <button id="undo" class="quiet" disabled title="Undo cut (Ctrl+Z)">↶ Undo</button>
+          </div>
+          <p class="panel-note">Ctrl, ⌘ ou Shift + clique adiciona ou remove peças da seleção.</p>
+          <div class="piece-actions">
+            <button id="select-all-pieces" class="quiet" disabled>Selecionar todas</button>
+            <button id="delete-pieces" class="quiet" disabled>Excluir selecionadas</button>
+          </div>
+          <div class="two-fields">
+            <div class="field">
+              <label for="piece-rotation-axis">Eixo de rotação</label
+              ><select id="piece-rotation-axis" disabled>
+                <option value="x">X</option>
+                <option value="y">Y</option>
+                <option value="z" selected>Z</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="piece-rotation-angle">Ângulo (graus)</label
+              ><input id="piece-rotation-angle" type="number" value="90" step="1" disabled />
+            </div>
+          </div>
+          <div class="piece-actions">
+            <button id="rotate-piece" class="secondary" disabled>Girar selecionadas</button>
+            <button data-piece-angle="90" class="quiet" disabled>90°</button>
+            <button data-piece-angle="180" class="quiet" disabled>180°</button>
           </div>
           <div id="piece-list" class="piece-list">
             <p class="muted placeholder">Your model’s pieces will appear here.</p>
           </div>
           <div class="field">
-            <label for="separation-direction">Direção do afastamento na mesa</label>
+            <div class="label-row">
+              <label for="separation-direction">Direção do afastamento na mesa</label>
+              <button
+                id="move-to-bed"
+                class="quiet"
+                disabled
+                title="Encostar a base da peça selecionada em Z = 0"
+              >
+                Mover para mesa
+              </button>
+            </div>
             <select id="separation-direction" disabled>
               <option value="horizontal">Horizontal — eixo X</option>
               <option value="vertical">Vertical — eixo Y</option>
@@ -166,10 +251,14 @@
             </select>
           </div>
           <div class="label-row">
-            <label for="explode">Afastar somente a cor selecionada</label><output id="explode-value">0 mm</output>
+            <label for="explode">Afastar somente a cor selecionada</label
+            ><output id="explode-value">0 mm</output>
           </div>
           <input id="explode" type="range" min="-100" max="100" value="0" step="1" disabled />
-          <p class="panel-note">Cada cor mantém seu afastamento. A mesa será exportada com as posições que você definiu.</p>
+          <p class="panel-note">
+            Clique em uma peça no ambiente e arraste as setas X, Y e Z para movê-la. Cada peça
+            mantém sua posição na exportação.
+          </p>
         </section>
         <section class="panel materials-panel">
           <div class="section-title">
@@ -180,58 +269,58 @@
         </section>
         <section class="export-panel">
           <div hidden>
-          <label class="export-toggle" for="virtual-extruders">
-            <input
-              id="virtual-extruders"
-              type="checkbox"
-              aria-controls="virtual-settings"
-              aria-describedby="virtual-summary"
-              disabled
-            />
-            Use virtual extruders
-          </label>
-          <p id="virtual-summary" class="virtual-note">
-            Convert every exported color region. No cut required.
-          </p>
-          <div id="virtual-settings" hidden>
-            <div class="physical-slot-heading">
-              <label for="physical-extruders">Physical filament slots</label>
-              <select id="physical-extruders" aria-describedby="virtual-note" disabled>
-                <option value="2">2 slots</option>
-                <option value="3">3 slots</option>
-                <option value="4">4 slots</option>
-                <option value="5">5 slots</option>
-                <option value="6">6 slots</option>
-                <option value="7">7 slots</option>
-                <option value="8" selected>8 slots</option>
-              </select>
-              <span id="physical-slot-help" class="help-tip">
-                <button
-                  id="physical-slot-help-button"
-                  type="button"
-                  class="help-tip-button"
-                  aria-label="About physical filament slots"
-                  aria-describedby="virtual-note"
-                  aria-expanded="false"
-                >
-                  i
-                </button>
-                <span id="virtual-note" class="help-tooltip" role="tooltip" hidden>
-                  Match the numbered colors to your loaded filaments in slot order. Click a swatch
-                  to edit it. Reference colors start as Cyan, Magenta, Yellow, White, Black, Red,
-                  Green, Blue. Automatic mixing recipes are estimates you can edit in the slicer;
-                  the preview shows desired colors. Select a printer with the same physical slot
-                  count before opening the exported project.
+            <label class="export-toggle" for="virtual-extruders">
+              <input
+                id="virtual-extruders"
+                type="checkbox"
+                aria-controls="virtual-settings"
+                aria-describedby="virtual-summary"
+                disabled
+              />
+              Use virtual extruders
+            </label>
+            <p id="virtual-summary" class="virtual-note">
+              Convert every exported color region. No cut required.
+            </p>
+            <div id="virtual-settings" hidden>
+              <div class="physical-slot-heading">
+                <label for="physical-extruders">Physical filament slots</label>
+                <select id="physical-extruders" aria-describedby="virtual-note" disabled>
+                  <option value="2">2 slots</option>
+                  <option value="3">3 slots</option>
+                  <option value="4">4 slots</option>
+                  <option value="5">5 slots</option>
+                  <option value="6">6 slots</option>
+                  <option value="7">7 slots</option>
+                  <option value="8" selected>8 slots</option>
+                </select>
+                <span id="physical-slot-help" class="help-tip">
+                  <button
+                    id="physical-slot-help-button"
+                    type="button"
+                    class="help-tip-button"
+                    aria-label="About physical filament slots"
+                    aria-describedby="virtual-note"
+                    aria-expanded="false"
+                  >
+                    i
+                  </button>
+                  <span id="virtual-note" class="help-tooltip" role="tooltip" hidden>
+                    Match the numbered colors to your loaded filaments in slot order. Click a swatch
+                    to edit it. Reference colors start as Cyan, Magenta, Yellow, White, Black, Red,
+                    Green, Blue. Automatic mixing recipes are estimates you can edit in the slicer;
+                    the preview shows desired colors. Select a printer with the same physical slot
+                    count before opening the exported project.
+                  </span>
                 </span>
-              </span>
+              </div>
+              <div
+                id="physical-colors"
+                class="palette"
+                role="group"
+                aria-label="Physical filament colors in slot order"
+              ></div>
             </div>
-            <div
-              id="physical-colors"
-              class="palette"
-              role="group"
-              aria-label="Physical filament colors in slot order"
-            ></div>
-          </div>
           </div>
           <div class="field">
             <label for="export-format">Target slicer</label>
@@ -241,7 +330,7 @@
             <label for="export-scope">Export</label
             ><select id="export-scope" disabled>
               <option value="all">Todas as peças da mesa</option>
-              <option value="selected">Somente a cor selecionada</option>
+              <option value="selected">Somente as peças selecionadas</option>
             </select>
           </div>
           <button id="export-button" class="export-button" disabled>
