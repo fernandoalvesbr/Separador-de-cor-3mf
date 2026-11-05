@@ -30,6 +30,11 @@ function setLanguage(value) {
     localStorage.setItem('split3mf-language', language);
   } catch {}
   ui.refresh();
+  // This label is also changed dynamically as pieces are selected. Set its
+  // canonical text explicitly after each language change to avoid legacy
+  // cached text such as "Moverr" surviving in the button.
+  document.getElementById('move-to-bed').textContent =
+    language === 'en' ? 'Move to bed' : 'Mover para mesa';
 }
 window.translateUi = (value) => translate(value, language);
 document

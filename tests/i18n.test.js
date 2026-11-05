@@ -50,6 +50,10 @@ test('dynamic notifications, queues, counts and generated names use English', ()
 });
 
 test('Portuguese remains the default and original English labels can be localized', () => {
+  assert.equal(translate('Mover para mesa', 'pt-BR'), 'Mover para mesa');
+  assert.equal(translate('Moverr para mesa', 'pt-BR'), 'Mover para mesa');
+  assert.equal(translate('Mover para mesa', 'en'), 'Move to bed');
+  assert.equal(translate('Move to bed', 'pt-BR'), 'Mover para mesa');
   assert.equal(translate('Apply cut'), 'Aplicar corte');
   assert.equal(translate('Apply cut', 'en'), 'Apply cut');
   assert.equal(translate('Português', 'pt-BR'), 'Português');

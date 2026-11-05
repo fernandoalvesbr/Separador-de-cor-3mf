@@ -12,7 +12,11 @@ export function createTranslator(portuguese, english) {
       new RegExp(
         [...map.keys()]
           .sort((a, b) => b.length - a.length)
-          .map(escapeRegex)
+          .map((key) => {
+            const start = /^[\p{L}\p{N}]/u.test(key) ? '(?<![\\p{L}\\p{N}])' : '';
+            const end = /[\p{L}\p{N}]$/u.test(key) ? '(?![\\p{L}\\p{N}])' : '';
+            return start + escapeRegex(key) + end;
+          })
           .join('|'),
         'gu',
       ),
