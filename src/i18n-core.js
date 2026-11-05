@@ -66,6 +66,7 @@ const portuguesePatterns = [
   // Keep the Brazilian Portuguese spelling with a single "r", including
   // text produced by older cached bundles.
   [/\bMovver\b/g, 'Mover'],
+  [/\bMoverr\b/g, 'Mover'],
   [/\b(\d+) slots\b/g, '$1 posições'],
   [/\btriangles\b/g, 'triângulos'],
   [/\bmaterials\b/g, 'materiais'],
